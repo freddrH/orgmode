@@ -8,7 +8,6 @@ local utils = require('orgmode.utils')
 local VirtualIndent = {
   _ns_id = vim.api.nvim_create_namespace('orgmode.ui.indent'),
   _bufnrs = {},
-  _line_wrap_arr = {},
 }
 VirtualIndent.__index = VirtualIndent
 
@@ -91,6 +90,10 @@ function VirtualIndent:_get_indent_size(line, tree_has_errors)
   return 0
 end
 
+---@param line_nr number Current line that wrapping operation is done on.
+---@param line_str string Lua-string representing the current line.
+---@param indent number Current length of indentation.
+---@param wrap_col number width of writable space in buffer, from utils.winwidth
 function VirtualIndent:_set_wrappoints_of_luastring(line_nr, line_str, indent, wrap_col)
   local function update_exmarks(wrap_arr)
     local function set_extmarks(curr_line, pos, nr_spaces)
