@@ -131,15 +131,10 @@ function VirtualIndent:_set_wrappoints_of_luastring(line_nr, line_str, indent, w
   local ext_pos = 0
   local nr_spaces = indent
 
-  while idx < line_str:len() do
+  while idx < #line_str do
     local curr_byte = line_str:byte(idx)
 
-    if curr_byte < 128 then
-      wrap_pos = wrap_pos + 1
-    end
-
-    -- bytes between 191 and 128 are non-continuation characters.
-    if (curr_byte > 127) and (curr_byte < 192) then
+    if vim.str_utf_end(line_str, idx) == 0 then
       wrap_pos = wrap_pos + 1
     end
 
