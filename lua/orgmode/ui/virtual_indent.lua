@@ -117,16 +117,15 @@ function VirtualIndent:_set_wrappoints_of_luastring(line_nr, line_str, indent, w
     wrapped_str = '',
   }
 
-  -- have to turnoff linebreak since we only feature ' ' as linebreak.
   local vim_opt_linebreak = vim.o.linebreak
-  local opt_linebreak = true
   if vim_opt_linebreak then
-    vim.o.linebreak = false
+    print('virtual linebreak doesnt support vim.o.linebreak')
   end
 
   local i = 2
   local wrap_pos = 0
-  local last_space = 0
+  local last_break = 0
+  local break_before_word = 0
   local idx = 1
   local ext_pos = 0
   local nr_spaces = indent
@@ -134,37 +133,35 @@ function VirtualIndent:_set_wrappoints_of_luastring(line_nr, line_str, indent, w
   while idx < #line_str do
     local curr_byte = line_str:byte(idx)
 
+    local char_start = vim.str_utf_start(line_str, idx)
+    local charclass = vim.fn.charclass(line_str:sub(idx + char_start, idx))
+
     if vim.str_utf_end(line_str, idx) == 0 then
       wrap_pos = wrap_pos + 1
     end
 
     if wrap_pos == wrap_col then
-      if opt_linebreak then
-        local cut_len = idx - last_space
+      local cut_len = idx - break_before_word
 
-        if curr_byte == 32 then
-          ext_pos = idx
-          nr_spaces = indent
-        elseif cut_len >= wrap_col then
-          ext_pos = idx
-          nr_spaces = indent
-        else
-          ext_pos = last_space
-          nr_spaces = indent + cut_len
-          idx = last_space
-        end
+      ext_pos = break_before_word
+      nr_spaces = indent + cut_len
+      idx = break_before_word
 
-        temp_wrap_arr[i] = {
-          pos = ext_pos,
-          spaces = nr_spaces,
-        }
-      end
+      temp_wrap_arr[i] = {
+        pos = ext_pos,
+        spaces = nr_spaces,
+      }
       i = i + 1
       wrap_pos = 0
     end
 
-    if curr_byte == 32 then
-      last_space = idx
+    -- To mimic linebreak i have to keep track of the blank character before
+    -- previous word.
+    if charclass < 2 then
+      last_break = idx
+    end
+    if charclass > 1 then
+      break_before_word = last_break
     end
     idx = idx + 1
   end
