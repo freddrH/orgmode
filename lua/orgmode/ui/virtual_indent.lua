@@ -1,4 +1,5 @@
 local tree_utils = require('orgmode.utils.treesitter')
+local utils = require('orgmode.utils')
 ---@class OrgVirtualIndent
 ---@field private _ns_id number extmarks namespace id
 ---@field private _bufnr integer Buffer VirtualIndent is attached to
@@ -89,6 +90,101 @@ function VirtualIndent:_get_indent_size(line, tree_has_errors)
   return 0
 end
 
+---@param line_nr number Current line that wrapping operation is done on.
+---@param line_str string Lua-string representing the current line.
+---@param indent number Current length of indentation.
+---@param wrap_col number width of writable space in buffer, from utils.winwidth
+function VirtualIndent:_set_wrappoints_of_luastring(line_nr, line_str, indent, wrap_col)
+  local function update_exmarks(wrap_arr)
+    local function set_extmarks(curr_line, pos, nr_spaces)
+      pcall(vim.api.nvim_buf_set_extmark, self._bufnr, self._ns_id, curr_line, pos, {
+        virt_text = { { string.rep(' ', nr_spaces), 'OrgIndent' } },
+        virt_text_pos = 'inline',
+        right_gravity = false,
+        priority = 110,
+      })
+    end
+
+    for _, wrapped_line in ipairs(wrap_arr) do
+      set_extmarks(line_nr, wrapped_line.pos, wrapped_line.spaces)
+    end
+  end
+
+  local temp_wrap_arr = {}
+  temp_wrap_arr[1] = {
+    pos = 0,
+    spaces = indent,
+  }
+
+  local i = 2
+  local wrap_pos = 0
+  local last_break = 0
+  local break_before_word = 0
+  local idx = 1
+  local ext_pos = 0
+  local nr_spaces = indent
+  local cumsum_virt_cols = indent
+
+  while idx < #line_str do
+    local char_start = vim.str_utf_start(line_str, idx)
+    local charclass = vim.fn.charclass(line_str:sub(idx + char_start, idx))
+    local char_is_tab = (line_str:byte(idx) == 9)
+
+    if vim.str_utf_end(line_str, idx) == 0 then
+      wrap_pos = wrap_pos + 1
+
+      if char_is_tab then
+        local shiftw = vim.fn.shiftwidth()
+        local tab_shift = (shiftw - (((idx + cumsum_virt_cols) - 1) % shiftw)) - 1
+
+        cumsum_virt_cols = cumsum_virt_cols + tab_shift
+
+        wrap_pos = wrap_pos + tab_shift
+        if wrap_pos > wrap_col then
+          nr_spaces = tab_shift
+        end
+      end
+    end
+
+    if wrap_pos >= wrap_col then
+      local cut_len = idx - break_before_word
+
+      if cut_len >= wrap_col then
+        ext_pos = idx
+        nr_spaces = indent
+        -- Tabs are a big problem. This works as long as the tabs
+        -- are not on the breakpoint
+      elseif char_is_tab then
+        local overflow = wrap_pos - wrap_col
+        ext_pos = break_before_word
+        nr_spaces = cut_len + nr_spaces + indent - overflow
+        cumsum_virt_cols = cumsum_virt_cols - nr_spaces
+      else
+        ext_pos = break_before_word
+        nr_spaces = indent + cut_len
+        idx = break_before_word
+      end
+
+      temp_wrap_arr[i] = {
+        pos = ext_pos,
+        spaces = nr_spaces,
+      }
+      cumsum_virt_cols = cumsum_virt_cols + nr_spaces
+      i = i + 1
+      wrap_pos = 0
+    end
+
+    if charclass < 2 then
+      last_break = idx
+    end
+    if charclass > 1 then
+      break_before_word = last_break
+    end
+    idx = idx + 1
+  end
+  return temp_wrap_arr
+end
+
 ---@param start_line number start line number to set the indentation, 0-based inclusive
 ---@param end_line number end line number to set the indentation, 0-based inclusive
 ---@param ignore_ts? boolean whether or not to skip the treesitter start & end lookup
@@ -102,9 +198,9 @@ function VirtualIndent:set_indent(start_line, end_line, ignore_ts)
       end_line = math.max(parent:end_(), end_line)
     end
   end
-  if start_line > 0 then
-    start_line = start_line - 1
-  end
+  -- if start_line > 0 then
+  --   start_line = start_line - 1
+  -- end
 
   local node_at_cursor = tree_utils.get_node()
   local tree_has_errors = false
@@ -113,17 +209,46 @@ function VirtualIndent:set_indent(start_line, end_line, ignore_ts)
   end
 
   self:_delete_old_extmarks(start_line, end_line)
+
+  -- Put this in as preparation for making it an option.
+  local indent_longlines = true
+  local org_lines = {}
+  local win_width = 0
+  if indent_longlines then
+    org_lines = vim.api.nvim_buf_get_lines(0, start_line, end_line, false)
+    win_width = utils.winwidth(0)
+  end
+
   for line = start_line, end_line do
     local indent = self:_get_indent_size(line, tree_has_errors)
 
     if indent > 0 then
       -- NOTE: `ephemeral = true` is not implemented for `inline` virt_text_pos :(
-      pcall(vim.api.nvim_buf_set_extmark, self._bufnr, self._ns_id, line, 0, {
-        virt_text = { { string.rep(' ', indent), 'OrgIndent' } },
-        virt_text_pos = 'inline',
-        right_gravity = false,
-        priority = 110,
-      })
+      if indent_longlines then
+        local wrap_col = win_width - indent
+        local arr_index = (line - start_line) + 1
+
+        if org_lines[arr_index] then
+          local wrap_arr = self:_set_wrappoints_of_luastring(line, org_lines[arr_index], indent, wrap_col)
+
+          for _, wrap_point in ipairs(wrap_arr) do
+            pcall(vim.api.nvim_buf_set_extmark, self._bufnr, self._ns_id, line, wrap_point.pos, {
+              virt_text = { { string.rep(' ', wrap_point.spaces), 'OrgIndent' } },
+              virt_text_pos = 'inline',
+              right_gravity = false,
+              priority = 110,
+            })
+          end
+        end
+      else
+        -- old behavior, no indent of longlines.
+        pcall(vim.api.nvim_buf_set_extmark, self._bufnr, self._ns_id, line, 0, {
+          virt_text = { { string.rep(' ', indent), 'OrgIndent' } },
+          virt_text_pos = 'inline',
+          right_gravity = false,
+          priority = 110,
+        })
+      end
     end
   end
 end
@@ -133,7 +258,7 @@ function VirtualIndent:attach()
   if self._attached then
     return
   end
-  self:set_indent(0, vim.api.nvim_buf_line_count(self._bufnr) - 1, true)
+  self:set_indent(0, vim.api.nvim_buf_line_count(self._bufnr))
 
   vim.api.nvim_buf_attach(self._bufnr, false, {
     on_lines = function(_, _, _, start_line, _, end_line)
@@ -141,12 +266,17 @@ function VirtualIndent:attach()
         return true
       end
 
-      vim.schedule(function()
+      local indent_longlines = true
+      if indent_longlines then
         self:set_indent(start_line, end_line)
-      end)
+      else
+        vim.schedule(function()
+          self:set_indent(start_line, end_line)
+        end)
+      end
     end,
     on_reload = function()
-      self:set_indent(0, vim.api.nvim_buf_line_count(self._bufnr) - 1, true)
+      self:set_indent(0, vim.api.nvim_buf_line_count(self._bufnr))
     end,
     on_detach = function(_, bufnr)
       self:detach()
