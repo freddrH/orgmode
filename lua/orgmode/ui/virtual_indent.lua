@@ -143,9 +143,14 @@ function VirtualIndent:_set_wrappoints_of_luastring(line_nr, line_str, indent, w
     if wrap_pos == wrap_col then
       local cut_len = idx - break_before_word
 
-      ext_pos = break_before_word
-      nr_spaces = indent + cut_len
-      idx = break_before_word
+      if cut_len >= wrap_col then
+        ext_pos = idx
+        nr_spaces = indent
+      else
+        ext_pos = break_before_word
+        nr_spaces = indent + cut_len
+        idx = break_before_word
+      end
 
       temp_wrap_arr[i] = {
         pos = ext_pos,
@@ -155,8 +160,6 @@ function VirtualIndent:_set_wrappoints_of_luastring(line_nr, line_str, indent, w
       wrap_pos = 0
     end
 
-    -- To mimic linebreak i have to keep track of the blank character before
-    -- previous word.
     if charclass < 2 then
       last_break = idx
     end
