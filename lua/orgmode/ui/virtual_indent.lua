@@ -95,21 +95,6 @@ end
 ---@param indent number Current length of indentation.
 ---@param wrap_col number width of writable space in buffer, from utils.winwidth
 function VirtualIndent:_set_wrappoints_of_luastring(line_nr, line_str, indent, wrap_col)
-  local function update_exmarks(wrap_arr)
-    local function set_extmarks(curr_line, pos, nr_spaces)
-      pcall(vim.api.nvim_buf_set_extmark, self._bufnr, self._ns_id, curr_line, pos, {
-        virt_text = { { string.rep(' ', nr_spaces), 'OrgIndent' } },
-        virt_text_pos = 'inline',
-        right_gravity = false,
-        priority = 110,
-      })
-    end
-
-    for _, wrapped_line in ipairs(wrap_arr) do
-      set_extmarks(line_nr, wrapped_line.pos, wrapped_line.spaces)
-    end
-  end
-
   local temp_wrap_arr = {}
   temp_wrap_arr[1] = {
     pos = 0,
@@ -124,10 +109,18 @@ function VirtualIndent:_set_wrappoints_of_luastring(line_nr, line_str, indent, w
   local ext_pos = 0
   local nr_spaces = indent
   local cumsum_virt_cols = indent
+  local prefered_wrapwidth = 70
+
+  if wrap_col < prefered_wrapwidth then
+    prefered_wrapwidth = wrap_col
+  end
+
+  local wrap_widthdiff = wrap_col - prefered_wrapwidth
 
   while idx < #line_str do
     local char_start = vim.str_utf_start(line_str, idx)
-    local charclass = vim.fn.charclass(line_str:sub(idx + char_start, idx))
+    local char_end = vim.str_utf_end(line_str, idx)
+    local charclass = vim.fn.charclass(line_str:sub(idx + char_start, idx + char_end))
     local char_is_tab = (line_str:byte(idx) == 9)
 
     if vim.str_utf_end(line_str, idx) == 0 then
@@ -140,22 +133,22 @@ function VirtualIndent:_set_wrappoints_of_luastring(line_nr, line_str, indent, w
         cumsum_virt_cols = cumsum_virt_cols + tab_shift
 
         wrap_pos = wrap_pos + tab_shift
-        if wrap_pos > wrap_col then
+        if wrap_pos > prefered_wrapwidth then
           nr_spaces = tab_shift
         end
       end
     end
 
-    if wrap_pos >= wrap_col then
+    if wrap_pos >= prefered_wrapwidth then
       local cut_len = idx - break_before_word
 
-      if cut_len >= wrap_col then
+      if cut_len >= prefered_wrapwidth then
         ext_pos = idx
         nr_spaces = indent
         -- Tabs are a big problem. This works as long as the tabs
         -- are not on the breakpoint
       elseif char_is_tab then
-        local overflow = wrap_pos - wrap_col
+        local overflow = wrap_pos - prefered_wrapwidth
         ext_pos = break_before_word
         nr_spaces = cut_len + nr_spaces + indent - overflow
         cumsum_virt_cols = cumsum_virt_cols - nr_spaces
@@ -167,7 +160,7 @@ function VirtualIndent:_set_wrappoints_of_luastring(line_nr, line_str, indent, w
 
       temp_wrap_arr[i] = {
         pos = ext_pos,
-        spaces = nr_spaces,
+        spaces = nr_spaces + wrap_widthdiff,
       }
       cumsum_virt_cols = cumsum_virt_cols + nr_spaces
       i = i + 1
