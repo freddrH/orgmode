@@ -140,7 +140,7 @@ function VirtualIndent:_set_wrappoints_of_luastring(line_nr, line_str, indent, w
     end
 
     if wrap_pos >= prefered_wrapwidth then
-      local cut_len = idx - break_before_word
+      local cut_len = vim.api.nvim_strwidth(line_str:sub(break_before_word, idx))
 
       if cut_len >= prefered_wrapwidth then
         ext_pos = idx
@@ -154,7 +154,7 @@ function VirtualIndent:_set_wrappoints_of_luastring(line_nr, line_str, indent, w
         cumsum_virt_cols = cumsum_virt_cols - nr_spaces
       else
         ext_pos = break_before_word
-        nr_spaces = indent + cut_len
+        nr_spaces = indent + cut_len - 1
         idx = break_before_word
       end
 
