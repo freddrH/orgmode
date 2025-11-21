@@ -8,6 +8,7 @@ local Menu = require('orgmode.ui.menu')
 local Promise = require('orgmode.utils.promise')
 local AgendaTypes = require('orgmode.agenda.types')
 local Input = require('orgmode.ui.input')
+local OrgHyperlink = require('orgmode.org.links.hyperlink')
 
 ---@class OrgAgenda
 ---@field highlights table[]
@@ -15,9 +16,10 @@ local Input = require('orgmode.ui.input')
 ---@field filters OrgAgendaFilter
 ---@field files OrgFiles
 ---@field highlighter OrgHighlighter
+---@field links OrgLinks
 local Agenda = {}
 
----@param opts? { highlighter: OrgHighlighter, files: OrgFiles }
+---@param opts? { highlighter: OrgHighlighter, files: OrgFiles, links: OrgLinks }
 ---@return OrgAgenda
 function Agenda:new(opts)
   opts = opts or {}
@@ -28,6 +30,7 @@ function Agenda:new(opts)
     highlights = {},
     files = opts.files,
     highlighter = opts.highlighter,
+    links = opts.links,
   }
   setmetatable(data, self)
   self.__index = self
@@ -75,7 +78,7 @@ function Agenda:render()
   local bufnr = self:_open_window()
   for i, view in ipairs(self.views) do
     view:render(bufnr, line)
-    if #self.views > 1 and i < #self.views then
+    if #self.views > 1 and i < #self.views and #view:get_lines() > 0 then
       colors.add_hr(bufnr, vim.api.nvim_buf_line_count(bufnr), config.org_agenda_block_separator)
     end
   end
@@ -565,38 +568,40 @@ function Agenda:_remote_edit(opts)
   end
   local getter = opts.getter
     or function()
-      local item, agenda_line, view = self:_get_headline()
-      if not item then
+      local headline, agenda_line, view = self:_get_headline()
+      if not headline then
         return
       end
-      return item, agenda_line, view
+      return headline, agenda_line, view
     end
-  local item, agenda_line, view = getter()
-  if not item then
+  local headline, agenda_line, view = getter()
+  if not headline then
     return
   end
-  local update = item.file:update(function(_)
-    vim.fn.cursor({ item:get_range().start_line, 1 })
+  local update = headline.file:update(function(_)
+    vim.fn.cursor({ headline:get_range().start_line, 1 })
     return Promise.resolve(require('orgmode').action(action)):next(function()
       return self.files:get_closest_headline_or_nil()
     end)
   end)
 
-  update:next(function(headline)
-    ---@cast headline OrgHeadline
+  local old_range = headline:get_range()
+
+  update:next(function(updated_headline)
+    ---@cast updated_headline OrgHeadline
     if opts.redo then
       return self:redo('remote_edit', true)
     end
-    if not opts.update_in_place or not headline then
+    if not opts.update_in_place or not updated_headline then
       return
     end
-    local line_range_same = headline:get_range():is_same_line_range(item:get_range())
+    local line_range_same = updated_headline:get_range():is_same_line_range(old_range)
 
     local update_item_inline = function()
       if not agenda_line or not view then
         return
       end
-      return view:rerender_agenda_line(agenda_line, headline)
+      return view:rerender_agenda_line(agenda_line, updated_headline)
     end
 
     if line_range_same then
@@ -617,6 +622,16 @@ function Agenda:get_headline_at_cursor()
       return agenda_line.headline
     end
   end
+end
+
+function Agenda:open_at_point()
+  local link = OrgHyperlink.from_extmarks_at_cursor()
+
+  if link then
+    return self.links:follow(link.url:to_string())
+  end
+
+  utils.echo_error('No link found under cursor')
 end
 
 function Agenda:quit()

@@ -2,8 +2,8 @@
 local OrgFile = require('orgmode.api.file')
 local OrgHeadline = require('orgmode.api.headline')
 local orgmode = require('orgmode')
-local validator = require('orgmode.utils.validator')
 local Promise = require('orgmode.utils.promise')
+local utils = require('orgmode.utils')
 
 ---@class OrgApiRefileOpts
 ---@field source OrgApiHeadline
@@ -15,7 +15,7 @@ local OrgApi = {}
 ---@param name? string|string[] specific file names to return (absolute path). If ommitted, returns all loaded files
 ---@return OrgApiFile|OrgApiFile[]
 function OrgApi.load(name)
-  validator.validate('name', name, { 'string', 'table' }, true)
+  vim.validate('name', name, { 'string', 'table' }, true)
   if not name then
     return vim.tbl_map(function(file)
       return OrgFile._build_from_internal_file(file)
@@ -55,8 +55,8 @@ end
 ---@param opts OrgApiRefileOpts
 ---@return OrgPromise<boolean>
 function OrgApi.refile(opts)
-  validator.validate('source', opts.source, 'table')
-  validator.validate('destination', opts.destination, 'table')
+  vim.validate('source', opts.source, 'table')
+  vim.validate('destination', opts.destination, 'table')
 
   if getmetatable(opts.source) ~= OrgHeadline then
     error('Source must be an OrgApiHeadline', 0)
@@ -81,11 +81,14 @@ function OrgApi.refile(opts)
     refile_opts.destination_headline = opts.destination._section
   end
 
-  local source_bufnr = vim.fn.bufnr('^' .. opts.source.file.filename .. '$') or -1
+  local source_bufnr = utils.get_buffer_by_filename(opts.source.file.filename)
   local is_capture = source_bufnr > -1 and vim.b[source_bufnr].org_capture
-
-  if is_capture and orgmode.capture._window then
-    refile_opts.template = orgmode.capture._window.template
+  if is_capture then
+    local capture_window = orgmode.capture._windows[vim.b[source_bufnr].org_capture_window_id]
+    if capture_window then
+      refile_opts.template = capture_window.template
+      refile_opts.capture_window = capture_window
+    end
   end
 
   return Promise.resolve()

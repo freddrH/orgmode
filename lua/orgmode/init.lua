@@ -61,20 +61,22 @@ function Org:init()
   self.agenda = require('orgmode.agenda'):new({
     files = self.files,
     highlighter = self.highlighter,
+    links = self.links,
   })
   self.capture = require('orgmode.capture'):new({
     files = self.files,
   })
+  self.completion = require('orgmode.org.autocompletion'):new({ files = self.files, links = self.links })
   self.org_mappings = require('orgmode.org.mappings'):new({
     capture = self.capture,
     agenda = self.agenda,
     files = self.files,
     links = self.links,
+    completion = self.completion,
   })
   self.clock = require('orgmode.clock'):new({
     files = self.files,
   })
-  self.completion = require('orgmode.org.autocompletion'):new({ files = self.files, links = self.links })
   self.statusline_debounced = require('orgmode.utils').debounce('statusline', function()
     return self.clock:get_statusline()
   end, 300)
@@ -89,6 +91,15 @@ end
 
 function Org:setup_autocmds()
   local org_augroup = vim.api.nvim_create_augroup('orgmode_nvim', { clear = true })
+  vim.api.nvim_create_autocmd('BufWinEnter', {
+    pattern = { '*.org', '*.org_archive' },
+    group = org_augroup,
+    callback = function(event)
+      if not vim.bo[event.buf].filetype or vim.bo[event.buf].filetype == '' then
+        vim.bo[event.buf].filetype = 'org'
+      end
+    end,
+  })
   vim.api.nvim_create_autocmd('BufWritePost', {
     pattern = { '*.org', '*.org_archive' },
     group = org_augroup,

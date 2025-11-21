@@ -176,14 +176,18 @@ end
 
 ---@return OrgTodoKeywords
 function Config:get_todo_keywords()
-  if self.todo_keywords then
-    return self.todo_keywords
+  if not self.todo_keywords then
+    self.todo_keywords = self:build_todo_keywords()
   end
-  self.todo_keywords = TodoKeywords:new({
-    org_todo_keywords = self.opts.org_todo_keywords,
+  return self.todo_keywords
+end
+
+---@param todo_keywords? string[] | string[][]
+function Config:build_todo_keywords(todo_keywords)
+  return TodoKeywords:new({
+    org_todo_keywords = todo_keywords or self.opts.org_todo_keywords,
     org_todo_keyword_faces = self.opts.org_todo_keyword_faces,
   })
-  return self.todo_keywords
 end
 
 --- Setup mappings for a given category and buffer
@@ -540,6 +544,34 @@ function Config:use_property_inheritance(property_name)
   else
     return use_inheritance and true or false
   end
+end
+
+-- Return repeat count depending on `org_agenda_show_future_repeats` value.
+-- If nil, repeat infinitely.
+-- @return number|nil
+function Config:get_repeat_count()
+  if self.org_agenda_show_future_repeats == true then
+    return nil
+  end
+
+  if self.org_agenda_show_future_repeats == false then
+    return 0
+  end
+
+  if self.org_agenda_show_future_repeats == 'next' then
+    return 1
+  end
+  if type(self.org_agenda_show_future_repeats) == 'number' and self.org_agenda_show_future_repeats >= 0 then
+    return self.org_agenda_show_future_repeats
+  end
+
+  utils.echo_error({
+    'Invalid value for `org_agenda_show_future_repeats`',
+    'Either boolean, positive number or "next" expected',
+    'Defaulting to "true"',
+  })
+
+  return nil
 end
 
 ---@param filetype_name string

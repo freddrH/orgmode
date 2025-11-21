@@ -16,13 +16,13 @@ local Babel = require('orgmode.babel')
 local Promise = require('orgmode.utils.promise')
 local Input = require('orgmode.ui.input')
 local Footnote = require('orgmode.objects.footnote')
-local Range = require('orgmode.files.elements.range')
 
 ---@class OrgMappings
 ---@field capture OrgCapture
 ---@field agenda OrgAgenda
 ---@field files OrgFiles
 ---@field links OrgLinks
+---@field completion OrgCompletion
 local OrgMappings = {}
 
 ---@param data table
@@ -33,6 +33,7 @@ function OrgMappings:new(data)
   opts.agenda = data.agenda
   opts.files = data.files
   opts.links = data.links
+  opts.completion = data.completion
   setmetatable(opts, self)
   self.__index = self
   return opts
@@ -351,7 +352,7 @@ function OrgMappings:todo_next_state()
 end
 
 function OrgMappings:todo_prev_state()
-  self:_todo_change_state('prev')
+  return self:_todo_change_state('prev')
 end
 
 function OrgMappings:toggle_heading()
@@ -469,8 +470,20 @@ function OrgMappings:_todo_change_state(direction)
   for _, date in ipairs(repeater_dates) do
     self:_replace_date(date:apply_repeater())
   end
+
   local new_todo = item:get_todo()
-  self:_change_todo_state('reset')
+
+  -- Reset to first TODO of the same sequence for repeating tasks
+  local todos = item.file:get_todo_keywords()
+  local todo_state = TodoState:new({ current_state = new_todo, todos = todos })
+  local reset_keyword = todo_state:get_reset_todo(item)
+
+  if reset_keyword then
+    item:set_todo(reset_keyword.value)
+  else
+    self:_change_todo_state('reset')
+    new_todo = item:get_todo()
+  end
 
   local prompt_repeat_note = config.org_log_repeat == 'note'
   local log_repeat_enabled = config.org_log_repeat ~= false
@@ -781,7 +794,7 @@ end
 function OrgMappings:insert_link()
   local link = OrgHyperlink.at_cursor()
   return Input.open('Links: ', link and link.url:to_string() or '', function(arg_lead)
-    return self.links:autocomplete(arg_lead)
+    return self.completion:complete_links_from_input(arg_lead)
   end):next(function(link_location)
     if not link_location then
       return false
@@ -813,8 +826,8 @@ function OrgMappings:move_subtree_up()
   local foldclosed = vim.fn.foldclosed('.')
   vim.cmd(string.format(':%d,%dmove %d', range.start_line, range.end_line, target_line))
   local pos = vim.fn.getcurpos()
-  vim.fn.cursor(target_line + 1, pos[2])
-  if foldclosed > -1 and vim.fn.foldclosed('.') == -1 then
+  vim.fn.cursor(target_line + 1, pos[3])
+  if foldclosed > -1 and vim.fn.foldlevel('.') > 0 and vim.fn.foldclosed('.') == -1 then
     vim.cmd([[norm!zc]])
   end
 end
@@ -830,8 +843,8 @@ function OrgMappings:move_subtree_down()
   local foldclosed = vim.fn.foldclosed('.')
   vim.cmd(string.format(':%d,%dmove %d', range.start_line, range.end_line, target_line))
   local pos = vim.fn.getcurpos()
-  vim.fn.cursor(target_line + range.start_line - range.end_line, pos[2])
-  if foldclosed > -1 and vim.fn.foldclosed('.') == -1 then
+  vim.fn.cursor(target_line + range.start_line - range.end_line, pos[3])
+  if foldclosed > -1 and vim.fn.foldlevel('.') > 0 and vim.fn.foldclosed('.') == -1 then
     vim.cmd([[norm!zc]])
   end
 end
@@ -1049,10 +1062,21 @@ end
 ---@return boolean
 function OrgMappings:_change_todo_state(direction, use_fast_access)
   local headline = self.files:get_closest_headline()
-  local current_keyword = headline:get_todo()
+  local current_keyword = headline:get_todo() or ''
+
   local todos = headline.file:get_todo_keywords()
+
+  -- Store the sequence index of the original keyword, if any
+  local original_sequence_index = nil
+  local current_keyword_obj = todos:find(current_keyword)
+
+  if current_keyword_obj then
+    original_sequence_index = current_keyword_obj.sequence_index
+  end
+
   local todo_state = TodoState:new({ current_state = current_keyword, todos = todos })
   local next_state = nil
+
   if use_fast_access and todo_state:has_fast_access() then
     next_state = todo_state:open_fast_access()
   else
