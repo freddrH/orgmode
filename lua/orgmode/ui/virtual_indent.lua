@@ -78,7 +78,9 @@ function VirtualIndent:_get_indent_size(line, tree_has_errors)
 
   local headline = tree_utils.closest_headline_node({ line + 1, 1 })
 
+  print('HL:', headline)
   if headline then
+    print('is headline')
     local headline_line = headline:start()
 
     if headline_line ~= line then
@@ -183,22 +185,42 @@ end
 ---@param ignore_ts? boolean whether or not to skip the treesitter start & end lookup
 function VirtualIndent:set_indent(start_line, end_line, ignore_ts)
   ignore_ts = ignore_ts or false
+
   local headline = tree_utils.closest_headline_node({ start_line + 1, 1 })
+  print('--------------------------------------------------')
+  print('headline: ', headline)
   if headline and not ignore_ts then
     local parent = headline:parent()
+    print('parent: ', parent)
     if parent then
       start_line = math.min(parent:start(), start_line)
       end_line = math.max(parent:end_(), end_line)
     end
   end
-  -- if start_line > 0 then
-  --   start_line = start_line - 1
-  -- end
+  print('startstart: ', start_line)
+  print(end_line)
+  print('endend', end_line)
+  if start_line > 0 then
+    start_line = start_line - 1
+
+    -- to handle ts-crash when headline stars are joined with
+    -- paragraph above.
+    local err_check = tree_utils.closest_headline_node({ end_line + 1, 1 })
+
+    local err_at_cursor = (err_check == nil)
+
+    if err_at_cursor then
+      print('error close')
+    end
+    print('errcheck: ', err_check)
+  end
 
   local node_at_cursor = tree_utils.get_node()
   local tree_has_errors = false
   if node_at_cursor then
     tree_has_errors = node_at_cursor:tree():root():has_error()
+    print('node: ', node_at_cursor)
+    print('node: ', node_at_cursor:parent())
   end
 
   self:_delete_old_extmarks(start_line, end_line)
@@ -213,7 +235,15 @@ function VirtualIndent:set_indent(start_line, end_line, ignore_ts)
   end
 
   for line = start_line, end_line do
+    print('-------------- ', line)
+    print(tree_has_errors)
+    print('start: ', start_line)
+    local test = tree_utils.closest_headline_node({ line + 1, 1 })
+    print('test ', test)
+    print('end: ', end_line)
     local indent = self:_get_indent_size(line, tree_has_errors)
+    print(indent)
+    print('ddd')
 
     if indent > 0 then
       -- NOTE: `ephemeral = true` is not implemented for `inline` virt_text_pos :(
