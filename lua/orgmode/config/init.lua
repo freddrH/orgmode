@@ -386,6 +386,9 @@ function Config:setup_ts_predicates()
     local empty_lines = 0
     while end_row > start_row do
       local line = vim.api.nvim_buf_get_lines(bufnr, end_row - 1, end_row, false)[1]
+      if line == nil then
+        break
+      end
       if vim.trim(line) ~= '' then
         break
       end
