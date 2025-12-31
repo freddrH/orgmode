@@ -373,6 +373,7 @@ function Config:setup_ts_predicates()
     local capture_id = pred[2]
     local section_node = match[capture_id]
     section_node = section_node and section_node[#section_node]
+
     if not capture_id or not section_node or section_node:type() ~= 'section' then
       return
     end
@@ -386,6 +387,9 @@ function Config:setup_ts_predicates()
     local empty_lines = 0
     while end_row > start_row do
       local line = vim.api.nvim_buf_get_lines(bufnr, end_row - 1, end_row, false)[1]
+      if not line then
+        return
+      end
       if vim.trim(line) ~= '' then
         break
       end
