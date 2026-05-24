@@ -169,7 +169,8 @@ function Capture:_refile_from_capture_buffer(opts)
   local destination_headline = opts.destination_headline
 
   if destination_headline then
-    target_line = destination_headline:get_range().end_line
+    -- target_line = destination_headline:get_range().end_line
+    target_line = destination_headline:get_range().start_line
   end
 
   if opts.template.datetree then
