@@ -273,7 +273,9 @@ function VirtualIndent:attach()
       local indent_longlines = true
       if indent_longlines then
         indent_longlines = true
-        self:set_indent(start_line, end_line)
+
+        local cur_node = tree_utils.get_node_at_cursor()
+        print(cur_node:type())
       else
         vim.schedule(function()
           self:set_indent(start_line, end_line)
