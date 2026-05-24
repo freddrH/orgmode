@@ -6,4 +6,7 @@ return {
   HeadlinePromoted = require('orgmode.events.types.headline_promoted_event'),
   HeadlineDemoted = require('orgmode.events.types.headline_demoted_event'),
   HeadingToggled = require('orgmode.events.types.heading_toggled'),
+  NoteAdded = require('orgmode.events.types.note_added_event'),
+  ClockedIn = require('orgmode.events.types.clocked_in'),
+  ClockedOut = require('orgmode.events.types.clocked_out'),
 }

@@ -9,6 +9,7 @@ Table of Contents                                  *orgmode-table-of-contents*
   - Calendar settings                |orgmode-configuration-calendar-settings|
   - Tags settings                        |orgmode-configuration-tags-settings|
   - Mappings                                  |orgmode-configuration-mappings|
+  - Lsp                                            |orgmode-configuration-lsp|
   - Features                                  |orgmode-configuration-features|
   - User interface                      |orgmode-configuration-user-interface|
 2. Troubleshooting                                   |orgmode-troubleshooting|
@@ -31,6 +32,7 @@ the plugin.
 - |orgmode-calendar-settings|
 - |orgmode-tags-settings|
 - |orgmode-mappings|
+- |orgmode-lsp|
 - |orgmode-features|
 - |orgmode-user-interface|
 
@@ -973,9 +975,10 @@ Templates have the following fields:
 - `target` (`string?`) — name of the file to which the capture content
     will be added. If the target is not specified, the content will be
     added to the |orgmode-org_default_notes_file| file
-- `headline` (`string?`) — title of the headline after which the
-    capture content will be added. If no headline is specified, the
-    content will be appended to the end of the file
+- `headline` (`string|fun():string?`) — title of the headline after which the
+    capture content will be added. If a function is provided, it will be called during
+    refile and must return the headline title as string. If no headline is specified,
+    the content will be appended to the end of the file
 - `datetree (boolean | { time_prompt?: boolean, reversed?: boolean, tree_type: 'day' | 'month' | 'week' | 'custom' })`
     Create a date tree <https://orgmode.org/manual/Template-elements.html#FOOT84> with current day in the target file and put the capture content there.
     - `true` - Create ascending datetree (newer dates go to end) with the current date
@@ -2309,6 +2312,29 @@ To make all mappings dot repeatable, install vim-repeat
 <https://github.com/tpope/vim-repeat> plugin.
 
 
+LSP                                                *orgmode-configuration-lsp*
+
+📝 NOTE: Experimental
+
+There is basic LSP support available in org files. Available methods:
+
+- `textDocument/documentSymbol` - Shows list of headlines in current file,
+    correctly nested
+- `workspace/symbol` - List and filter all headlines that are part of
+    |orgmode-org_agenda_files|
+- `textDocument/references` - Show all links to the headline under cursor
+- `textDocument/completion` - Autocompletion results. More details in
+    |orgmode-autocompletion|. NOTE: If you are using any completion plugins
+    <./plugins.org::#completion-plugins>, make sure to remove the custom source
+    settings for orgmode. It's no longer needed. IF you are using `omnifunc`, it's
+    best to not set it to builtin LSP omnifunc (`v:lua.vim.lsp.omnifunc`) in
+    orgmode files, due to some edge cases.
+    To enable the orgmode lsp, make sure to call `vim.lsp.enable`:
+    >lua
+        vim.lsp.enable('org')
+    <
+
+
 FEATURES                                      *orgmode-configuration-features*
 
 
@@ -2960,12 +2986,16 @@ The following highlight groups are used:
 - `@org.table.heading` - Table headings - linked to `@markup.heading`,
 - `@org.edit_src` - The highlight for the source content in an _Org_ buffer while it is being edited in an edit special buffer - linked to `Visual`,
 - `@org.agenda.deadline`: A item deadline in the agenda view - Parsed from `Error` (see note below)
+- `@org.agenda.deadline.upcoming`: A item upcoming deadline in the agenda view - Parsed from `WarningMsg` (see note below)
 - `@org.agenda.scheduled`: A scheduled item in the agenda view - Parsed from `DiffAdd` (see note below)
 - `@org.agenda.scheduled_past`: A item past its scheduled date in the agenda view - Parsed from `WarningMsg` (see note below)
 - `@org.agenda.time_grid`: Time grid line - Parsed from `WarningMsg` (see note below)
 - `@org.agenda.day`: Highlight for all days in Agenda view - linked to `Statement`
 - `@org.agenda.today`: Highlight for today in Agenda view - linked to `@org.bold`
 - `@org.agenda.weekend`: Highlight for weekend days in Agenda view - linked to `@org.bold`
+- `@org.agenda.weekend.today`: Highlight for today when it is a weekend day in Agenda view - linked to `@org.bold`
+- `@org.footnote`: Highlight for footnote definition - linked to `@markup.link.url`
+- `@org.footnote.reference`: Highlight for footnote reference - linked to `@markup.link.url`
 
 📝 NOTE: Colors used for todo keywords and agenda states (deadline, schedule
 ok, schedule warning) are parsed from the current colorscheme from several
@@ -2990,7 +3020,7 @@ highlight group:
     })
 <
 
-For adding/changing TODO keyword colors see |orgmode-org-todo-keyword-faces|
+For adding/changing TODO keyword colors see |orgmode-org_todo_keyword_faces|
 
 
 Menu                                                            *orgmode-Menu*

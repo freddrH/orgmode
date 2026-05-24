@@ -17,6 +17,25 @@ local Promise = require('orgmode.utils.promise')
 local Input = require('orgmode.ui.input')
 local Footnote = require('orgmode.objects.footnote')
 
+---Schedule a fold update for the given range. Call after buffer edits.
+---OrgRange is 1-indexed; vim._foldupdate expects 0-indexed lines.
+---@param range OrgRange
+local function schedule_fold_update(range)
+  local bufnr = vim.api.nvim_get_current_buf()
+  vim.schedule(function()
+    if not vim.api.nvim_buf_is_valid(bufnr) then
+      return
+    end
+    local start_line = range.start_line - 1
+    local end_line = math.min(range.end_line, vim.api.nvim_buf_line_count(bufnr))
+    for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
+      if vim.wo[win].foldmethod == 'expr' then
+        vim._foldupdate(win, start_line, end_line)
+      end
+    end
+  end)
+end
+
 ---@class OrgMappings
 ---@field capture OrgCapture
 ---@field agenda OrgAgenda
@@ -50,6 +69,8 @@ function OrgMappings:set_tags(tags)
   local headline = self.files:get_closest_headline()
   local headline_tags = headline:get_own_tags()
   local current_tags = utils.tags_to_string(headline_tags)
+  -- Capture range before promise chain — TS nodes become stale after edits
+  local range = headline:get_range()
 
   return Promise.resolve()
     :next(function()
@@ -69,14 +90,17 @@ function OrgMappings:set_tags(tags)
         return
       end
 
-      return headline:set_tags(new_tags)
+      headline:set_tags(new_tags)
+      schedule_fold_update(range)
     end)
 end
 
 ---@return nil
 function OrgMappings:toggle_archive_tag()
   local headline = self.files:get_closest_headline()
+  local range = headline:get_range()
   headline:toggle_tag('ARCHIVE')
+  schedule_fold_update(range)
 end
 
 function OrgMappings:cycle()
@@ -344,7 +368,9 @@ function OrgMappings:set_priority(direction)
     end
   end
 
+  local range = headline:get_range()
   headline:set_priority(new_priority)
+  schedule_fold_update(range)
 end
 
 function OrgMappings:todo_next_state()
@@ -419,6 +445,9 @@ function OrgMappings:_todo_change_state(direction)
   local headline = self.files:get_closest_headline()
   local old_state = headline:get_todo()
   local was_done = headline:is_done()
+
+  local range = headline:get_range()
+
   local changed = self:_change_todo_state(direction, true)
 
   if not changed then
@@ -427,6 +456,8 @@ function OrgMappings:_todo_change_state(direction)
 
   local item = self.files:get_closest_headline()
   EventManager.dispatch(events.TodoChanged:new(item, old_state, was_done))
+
+  schedule_fold_update(range)
 
   local is_done = item:is_done() and not was_done
   local is_undone = not item:is_done() and was_done
@@ -476,14 +507,9 @@ function OrgMappings:_todo_change_state(direction)
   -- Reset to first TODO of the same sequence for repeating tasks
   local todos = item.file:get_todo_keywords()
   local todo_state = TodoState:new({ current_state = new_todo, todos = todos })
-  local reset_keyword = todo_state:get_reset_todo(item)
+  local reset_keyword = todo_state:get_reset_todo(item, old_state)
 
-  if reset_keyword then
-    item:set_todo(reset_keyword.value)
-  else
-    self:_change_todo_state('reset')
-    new_todo = item:get_todo()
-  end
+  item:set_todo(reset_keyword.value)
 
   local prompt_repeat_note = config.org_log_repeat == 'note'
   local log_repeat_enabled = config.org_log_repeat ~= false
@@ -867,12 +893,14 @@ function OrgMappings:add_note()
   local headline = self.files:get_closest_headline()
   local indent = headline:get_indent()
   local text = ('%s- Note taken on %s \\\\'):format(indent, Date.now():to_wrapped_string(false))
-  return self:_get_note(text, indent, 'Insert note for entry.'):next(function(note)
-    if not note then
-      return false
-    end
-    return headline:add_note(note)
-  end)
+  return self
+    :_get_note(text, indent, string.format('Insert note for %s.', headline:get_title() or 'entry'))
+    :next(function(note)
+      if not note then
+        return false
+      end
+      return headline:add_note(note)
+    end)
 end
 
 function OrgMappings:open_at_point()
@@ -889,14 +917,28 @@ function OrgMappings:open_at_point()
 
   local footnote = Footnote.at_cursor()
   if footnote then
-    return self:_jump_to_footnote(footnote)
+    if footnote.is_reference then
+      return self:_jump_to_footnote_definition(footnote)
+    end
+    return self:_jump_to_footnote_reference(footnote)
   end
 end
 
----@param footnote_reference OrgFootnote
-function OrgMappings:_jump_to_footnote(footnote_reference)
+function OrgMappings:_jump_to_footnote_reference(footnote_definition)
   local file = self.files:get_current_file()
-  local footnote = file:find_footnote(footnote_reference)
+  local reference = file:find_footnote_reference(footnote_definition)
+
+  if not reference then
+    return utils.echo_info(('Cannot find reference for footnote "%s"'):format(footnote_definition:get_name()))
+  end
+
+  return vim.fn.cursor({ reference.range.start_line, reference.range.start_col })
+end
+
+---@param footnote_reference OrgFootnote
+function OrgMappings:_jump_to_footnote_definition(footnote_reference)
+  local file = self.files:get_current_file()
+  local footnote = file:find_footnote_definition(footnote_reference)
 
   if not footnote then
     local choice = vim.fn.confirm('No footnote found. Create one?', '&Yes\n&No')
@@ -905,31 +947,20 @@ function OrgMappings:_jump_to_footnote(footnote_reference)
     end
 
     local footnotes_headline = file:find_headline_by_title('footnotes')
+    local fndef = ('[fn:%s] '):format(footnote_reference.label)
     if footnotes_headline then
       local append_line = footnotes_headline:get_append_line()
-      vim.api.nvim_buf_set_lines(0, append_line, append_line, false, { footnote_reference.value .. ' ' })
-      vim.fn.cursor({ append_line + 1, #footnote_reference.value + 1 })
+      vim.api.nvim_buf_set_lines(0, append_line, append_line, false, { fndef })
+      vim.fn.cursor({ append_line + 1, #fndef })
       return vim.cmd('startinsert!')
     end
     local last_line = vim.api.nvim_buf_line_count(0)
-    vim.api.nvim_buf_set_lines(0, last_line, last_line, false, { '', '* Footnotes', footnote_reference.value .. ' ' })
-    vim.fn.cursor({ last_line + 3, #footnote_reference.value + 1 })
+    vim.api.nvim_buf_set_lines(0, last_line, last_line, false, { '', '* Footnotes', fndef })
+    vim.fn.cursor({ last_line + 3, #fndef })
     return vim.cmd('startinsert!')
   end
 
-  local is_footnote_marker = footnote.range:is_same(footnote_reference.range)
-
-  if not is_footnote_marker then
-    return vim.fn.cursor({ footnote.range.start_line, footnote.range.start_col })
-  end
-
-  local reference = file:find_footnote_reference(footnote)
-
-  if reference then
-    return vim.fn.cursor({ reference.range.start_line, reference.range.start_col })
-  end
-
-  utils.echo_info(('Cannot find reference for footnote "%s"'):format(footnote_reference:get_name()))
+  return vim.fn.cursor({ footnote.range.start_line, footnote.range.start_col })
 end
 
 function OrgMappings:export()
@@ -1066,14 +1097,6 @@ function OrgMappings:_change_todo_state(direction, use_fast_access)
 
   local todos = headline.file:get_todo_keywords()
 
-  -- Store the sequence index of the original keyword, if any
-  local original_sequence_index = nil
-  local current_keyword_obj = todos:find(current_keyword)
-
-  if current_keyword_obj then
-    original_sequence_index = current_keyword_obj.sequence_index
-  end
-
   local todo_state = TodoState:new({ current_state = current_keyword, todos = todos })
   local next_state = nil
 
@@ -1084,8 +1107,6 @@ function OrgMappings:_change_todo_state(direction, use_fast_access)
       next_state = todo_state:get_next()
     elseif direction == 'prev' then
       next_state = todo_state:get_prev()
-    elseif direction == 'reset' then
-      next_state = todo_state:get_reset_todo(headline)
     end
   end
 

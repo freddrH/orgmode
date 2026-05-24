@@ -516,7 +516,7 @@ function Agenda:goto_item()
     return
   end
   local target_window = nil
-  for _, win in ipairs(vim.api.nvim_list_wins()) do
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
     local ft = vim.api.nvim_get_option_value('filetype', {
       buf = vim.api.nvim_win_get_buf(win),
     })
@@ -526,7 +526,7 @@ function Agenda:goto_item()
   end
 
   if not target_window then
-    for _, win in ipairs(vim.api.nvim_list_wins()) do
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
       local buf = vim.api.nvim_win_get_buf(win)
       local ft = vim.api.nvim_get_option_value('filetype', { buf = buf })
       local modifiable = vim.api.nvim_get_option_value('modifiable', { buf = buf })
@@ -578,14 +578,14 @@ function Agenda:_remote_edit(opts)
   if not headline then
     return
   end
+  local old_range = headline:get_range()
+
   local update = headline.file:update(function(_)
     vim.fn.cursor({ headline:get_range().start_line, 1 })
     return Promise.resolve(require('orgmode').action(action)):next(function()
       return self.files:get_closest_headline_or_nil()
     end)
   end)
-
-  local old_range = headline:get_range()
 
   update:next(function(updated_headline)
     ---@cast updated_headline OrgHeadline
