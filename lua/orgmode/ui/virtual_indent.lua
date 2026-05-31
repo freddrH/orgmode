@@ -257,12 +257,13 @@ function VirtualIndent:attach()
   end
   self:set_indent(0, vim.api.nvim_buf_line_count(self._bufnr))
 
-  -- vim.api.nvim_create_autocmd({ 'TextChangedI', 'TextChanged' }, {
-  --   buffer = self._bufnr,
-  --   callback = function()
-  --     self:set_indent(0, vim.api.nvim_buf_line_count(self._bufnr))
-  --   end,
-  -- })
+  vim.api.nvim_create_autocmd({ 'TextChangedI', 'TextChanged' }, {
+    buffer = self._bufnr,
+    callback = function()
+      local cur_node = tree_utils.get_node_at_cursor()
+      self:set_indent(cur_node:start(), cur_node:end_() + 1)
+    end,
+  })
 
   vim.api.nvim_buf_attach(self._bufnr, false, {
     on_lines = function(_, _, _, start_line, _, end_line)
@@ -271,12 +272,7 @@ function VirtualIndent:attach()
       end
 
       local indent_longlines = true
-      if indent_longlines then
-        indent_longlines = true
-
-        local cur_node = tree_utils.get_node_at_cursor()
-        print(cur_node:type())
-      else
+      if not indent_longlines then
         vim.schedule(function()
           self:set_indent(start_line, end_line)
         end)
