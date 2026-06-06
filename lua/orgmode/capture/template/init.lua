@@ -84,6 +84,7 @@ local expansions = {
 ---@field target? string
 ---@field datetree? OrgCaptureTemplateDatetree
 ---@field headline? string|fun():string
+---@field prepend? boolean
 ---@field regexp? string
 ---@field properties? OrgCaptureTemplateProperties
 ---@field subtemplates? table<string, OrgCaptureTemplate>
@@ -103,6 +104,7 @@ function Template:new(opts)
   vim.validate('target', opts.target, 'string', true)
   vim.validate('regexp', opts.regexp, 'string', true)
   vim.validate('headline', opts.headline, { 'string', 'function' }, true)
+  vim.validate('prepend', opts.prepend, 'boolean', true)
   vim.validate('properties', opts.properties, 'table', true)
   vim.validate('subtemplates', opts.subtemplates, 'table', true)
   vim.validate('datetree', opts.datetree, { 'boolean', 'table' }, true)
@@ -113,6 +115,7 @@ function Template:new(opts)
   this.template = opts.template or ''
   this.target = opts.target or ''
   this.headline = opts.headline
+  this.prepend = opts.prepend
   this.properties = TemplateProperties:new(opts.properties)
   this.datetree = opts.datetree
   this.regexp = opts.regexp
@@ -199,20 +202,20 @@ function Template:compile()
     content = table.concat(content, '\n')
   end
   return self
-    :_compile(self.target, 'target')
-    :next(function(target)
-      if not target then
-        return nil
-      end
-      self.target = target
-      return self:_compile(content or '', 'content')
-    end)
-    :next(function(compiled_content)
-      if not compiled_content then
-        return nil
-      end
-      return vim.split(compiled_content, '\n', { plain = true })
-    end)
+      :_compile(self.target, 'target')
+      :next(function(target)
+        if not target then
+          return nil
+        end
+        self.target = target
+        return self:_compile(content or '', 'content')
+      end)
+      :next(function(compiled_content)
+        if not compiled_content then
+          return nil
+        end
+        return vim.split(compiled_content, '\n', { plain = true })
+      end)
 end
 
 ---@return OrgCaptureTemplateDatetreeOpts
@@ -279,10 +282,10 @@ end
 ---@return OrgPromise<string | nil>
 function Template:_compile_datetree(content, content_type)
   if
-    not self.datetree
-    or type(self.datetree) ~= 'table'
-    or not self.datetree.time_prompt
-    or content_type ~= 'target'
+      not self.datetree
+      or type(self.datetree) ~= 'table'
+      or not self.datetree.time_prompt
+      or content_type ~= 'target'
   then
     return Promise.resolve(content)
   end
@@ -330,18 +333,18 @@ function Template:_compile_expansions(content)
   end
 
   return result
-    :next(function()
-      if not proceed then
-        return nil
-      end
-      return content
-    end)
-    :catch(function(err)
-      if err == 'canceled' then
-        return
-      end
-      error(err)
-    end)
+      :next(function()
+        if not proceed then
+          return nil
+        end
+        return content
+      end)
+      :catch(function(err)
+        if err == 'canceled' then
+          return
+        end
+        error(err)
+      end)
 end
 
 ---@param content string
@@ -387,12 +390,12 @@ function Template:_compile_prompts(content)
 
   return Promise.mapSeries(function(prepared_input)
     return Input.open(prepared_input.prompt, '', prepared_input.completion and prepared_input.completion() or nil)
-      :next(function(response)
-        if not response or #response == 0 then
-          response = prepared_input.fallback_value
-        end
-        content = content:gsub(vim.pesc(prepared_input.exp), response)
-      end)
+        :next(function(response)
+          if not response or #response == 0 then
+            response = prepared_input.fallback_value
+          end
+          content = content:gsub(vim.pesc(prepared_input.exp), response)
+        end)
   end, prepared_inputs):next(function()
     return content
   end)

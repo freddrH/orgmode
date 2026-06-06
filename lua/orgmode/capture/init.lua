@@ -50,24 +50,24 @@ function Capture:setup_mappings()
   end
   local capture_map = maps.org_capture_finalize
   capture_map.map_entry
-    :with_handler(function()
-      return self:refile()
-    end)
-    :attach(capture_map.default_map, capture_map.user_map, capture_map.opts)
+      :with_handler(function()
+        return self:refile()
+      end)
+      :attach(capture_map.default_map, capture_map.user_map, capture_map.opts)
 
   local refile_map = maps.org_capture_refile
   refile_map.map_entry
-    :with_handler(function()
-      return self:refile_to_destination()
-    end)
-    :attach(refile_map.default_map, refile_map.user_map, refile_map.opts)
+      :with_handler(function()
+        return self:refile_to_destination()
+      end)
+      :attach(refile_map.default_map, refile_map.user_map, refile_map.opts)
 
   local kill_map = maps.org_capture_kill
   kill_map.map_entry
-    :with_handler(function()
-      return self:kill(true)
-    end)
-    :attach(kill_map.default_map, kill_map.user_map, kill_map.opts)
+      :with_handler(function()
+        return self:kill(true)
+      end)
+      :attach(kill_map.default_map, kill_map.user_map, kill_map.opts)
 end
 
 ---@param template OrgCaptureTemplate
@@ -104,7 +104,7 @@ function Capture:on_refile_close(capture_window)
   end
   if capture_window:is_modified() then
     local choice =
-      vim.fn.confirm(string.format('Do you want to refile this to %s?', opts.destination_file.filename), '&Yes\n&No')
+        vim.fn.confirm(string.format('Do you want to refile this to %s?', opts.destination_file.filename), '&Yes\n&No')
     vim.cmd([[redraw!]])
     if choice ~= 1 then
       if self.on_cancel_refile then
@@ -167,9 +167,14 @@ function Capture:_refile_from_capture_buffer(opts)
   local target_line = -1
   local destination_file = opts.destination_file
   local destination_headline = opts.destination_headline
+  local prepend = opts.template.prepend
 
   if destination_headline then
-    target_line = destination_headline:get_range().end_line
+    if prepend then
+      target_line = destination_headline:get_range().start_line
+    else
+      target_line = destination_headline:get_range().end_line
+    end
   end
 
   if opts.template.datetree then
@@ -222,60 +227,60 @@ function Capture:_refile_from_org_file(opts)
   local destination_headline = opts.destination_headline
 
   return Promise.resolve()
-    :next(function()
-      if not opts.destination_file then
-        return self:get_destination():next(function(destination)
-          if not destination then
-            return false
-          end
-          destination_file = destination.file
-          destination_headline = destination.headline
-          return destination
-        end)
-      end
-    end)
-    :next(function()
-      if not destination_file then
-        return false
-      end
-
-      local is_same_file = source_file.filename == destination_file.filename
-
-      local target_level = 0
-      local target_line = -1
-
-      if destination_headline then
-        target_level = destination_headline:get_level()
-        target_line = destination_headline:get_range().end_line
-      end
-
-      local lines = source_headline:get_lines()
-
-      if destination_headline or source_headline:get_level() > 1 then
-        lines = self:_adapt_headline_level(source_headline, target_level, is_same_file)
-      end
-
-      destination_file:update_sync(function()
-        if is_same_file then
-          local item_range = source_headline:get_range()
-          return vim.cmd(
-            string.format('silent! %d,%d move %s', item_range.start_line, item_range.end_line, target_line)
-          )
+      :next(function()
+        if not opts.destination_file then
+          return self:get_destination():next(function(destination)
+            if not destination then
+              return false
+            end
+            destination_file = destination.file
+            destination_headline = destination.headline
+            return destination
+          end)
+        end
+      end)
+      :next(function()
+        if not destination_file then
+          return false
         end
 
-        local range = self:_get_destination_range_without_empty_lines(Range.from_line(target_line))
-        target_line = range.start_line
-        vim.api.nvim_buf_set_lines(0, range.start_line, range.end_line, false, lines)
+        local is_same_file = source_file.filename == destination_file.filename
+
+        local target_level = 0
+        local target_line = -1
+
+        if destination_headline then
+          target_level = destination_headline:get_level()
+          target_line = destination_headline:get_range().end_line
+        end
+
+        local lines = source_headline:get_lines()
+
+        if destination_headline or source_headline:get_level() > 1 then
+          lines = self:_adapt_headline_level(source_headline, target_level, is_same_file)
+        end
+
+        destination_file:update_sync(function()
+          if is_same_file then
+            local item_range = source_headline:get_range()
+            return vim.cmd(
+              string.format('silent! %d,%d move %s', item_range.start_line, item_range.end_line, target_line)
+            )
+          end
+
+          local range = self:_get_destination_range_without_empty_lines(Range.from_line(target_line))
+          target_line = range.start_line
+          vim.api.nvim_buf_set_lines(0, range.start_line, range.end_line, false, lines)
+        end)
+
+        if not is_same_file and source_file.filename == utils.current_file_path() then
+          local item_range = source_headline:get_range()
+          vim.api.nvim_buf_set_lines(0, item_range.start_line - 1, item_range.end_line, false, {})
+        end
+
+        utils.echo_info(opts.message or ('Wrote %s'):format(destination_file.filename))
+        return target_line + 1
       end)
-
-      if not is_same_file and source_file.filename == utils.current_file_path() then
-        local item_range = source_headline:get_range()
-        vim.api.nvim_buf_set_lines(0, item_range.start_line - 1, item_range.end_line, false, {})
-      end
-
-      utils.echo_info(opts.message or ('Wrote %s'):format(destination_file.filename))
-      return target_line + 1
-    end)
 end
 
 ---@param headline OrgHeadline
@@ -305,24 +310,24 @@ function Capture:refile_file_headline_to_archive(headline)
   local outline_path = headline:get_outline_path()
 
   return self
-    :_refile_from_org_file({
-      source_headline = headline,
-      destination_file = destination_file,
-      message = ('Archived to %s'):format(destination_file.filename),
-    })
-    :next(function(target_line)
-      destination_file = self.files:get(archive_location)
-      return destination_file:update(function(archive_file)
-        local archived_headline = archive_file:get_closest_headline({ target_line, 0 })
-        archived_headline:set_property('ARCHIVE_TIME', Date.now():to_string())
-        archived_headline:set_property('ARCHIVE_FILE', file.filename)
-        if outline_path ~= '' then
-          archived_headline:set_property('ARCHIVE_OLPATH', outline_path)
-        end
-        archived_headline:set_property('ARCHIVE_CATEGORY', headline_category)
-        archived_headline:set_property('ARCHIVE_TODO', todo_state or '')
+      :_refile_from_org_file({
+        source_headline = headline,
+        destination_file = destination_file,
+        message = ('Archived to %s'):format(destination_file.filename),
+      })
+      :next(function(target_line)
+        destination_file = self.files:get(archive_location)
+        return destination_file:update(function(archive_file)
+          local archived_headline = archive_file:get_closest_headline({ target_line, 0 })
+          archived_headline:set_property('ARCHIVE_TIME', Date.now():to_string())
+          archived_headline:set_property('ARCHIVE_FILE', file.filename)
+          if outline_path ~= '' then
+            archived_headline:set_property('ARCHIVE_OLPATH', outline_path)
+          end
+          archived_headline:set_property('ARCHIVE_CATEGORY', headline_category)
+          archived_headline:set_property('ARCHIVE_TODO', todo_state or '')
+        end)
       end)
-    end)
 end
 
 ---@param item OrgHeadline
@@ -510,17 +515,17 @@ function Capture:build_note_capture(title)
       end
       local finalize_map = maps.org_note_finalize
       finalize_map.map_entry
-        :with_handler(function()
-          return capture_window:finish()
-        end)
-        :attach(finalize_map.default_map, finalize_map.user_map, finalize_map.opts)
+          :with_handler(function()
+            return capture_window:finish()
+          end)
+          :attach(finalize_map.default_map, finalize_map.user_map, finalize_map.opts)
 
       local kill_map = maps.org_note_kill
       kill_map.map_entry
-        :with_handler(function()
-          return capture_window:kill()
-        end)
-        :attach(kill_map.default_map, kill_map.user_map, kill_map.opts)
+          :with_handler(function()
+            return capture_window:kill()
+          end)
+          :attach(kill_map.default_map, kill_map.user_map, kill_map.opts)
     end,
     on_close = function(capture_window)
       local is_modified = vim.bo.modified
