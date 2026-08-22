@@ -309,7 +309,7 @@ describe('Capture', function()
     local capture_file = helpers.create_file(capture_lines)
 
     local template = Template:new({
-      prepend=true,
+      prepend = true,
       properties = {
         empty_lines = {
           before = 2,
