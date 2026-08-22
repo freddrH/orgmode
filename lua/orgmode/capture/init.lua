@@ -175,6 +175,8 @@ function Capture:_refile_from_capture_buffer(opts)
     else
       target_line = destination_headline:get_range().end_line
     end
+  elseif prepend then
+    target_line = 0
   end
 
   if opts.template.datetree then
