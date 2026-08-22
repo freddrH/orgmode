@@ -83,7 +83,6 @@ local expansions = {
 ---@field template? string|string[]
 ---@field target? string
 ---@field datetree? OrgCaptureTemplateDatetree
----@field headline? string|fun():string
 ---@field prepend? boolean
 ---@field headline? string|fun(OrgFile?):string
 ---@field regexp? string
